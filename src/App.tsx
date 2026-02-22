@@ -566,7 +566,7 @@ const RECIPES = [
   },
 ];
 
-const getRecipesByType = (t) => RECIPES.filter((r) => r.type === t);
+const getRecipesByType = (t:String) => RECIPES.filter((r) => r.type === t);
 
 const DEFAULT_PLAN = {
   breakfast: RECIPES[0],
