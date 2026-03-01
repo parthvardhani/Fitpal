@@ -1,12 +1,33 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   Home, BookOpen, BarChart2, ShoppingCart, Package,
-  RefreshCw, Check, Search, Heart, X,
-  ChevronLeft, Repeat2, Trash2, Plus, Sparkles
+  Check, Search, Heart, X,
+  ChevronLeft, Repeat2, Trash2, Plus, Sparkles, LogOut
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell
 } from "recharts";
+import { initializeApp } from "firebase/app";
+import {
+  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User
+} from "firebase/auth";
+import {
+  getFirestore, doc, getDoc, setDoc
+} from "firebase/firestore";
+
+// ── FIREBASE ──────────────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyCQRwj2R_eYRSi0A7PYwJmdiho9NTXcFsc",
+  authDomain: "vegfit-e6c07.firebaseapp.com",
+  projectId: "vegfit-e6c07",
+  storageBucket: "vegfit-e6c07.firebasestorage.app",
+  messagingSenderId: "631401887671",
+  appId: "1:631401887671:web:da17444a06d09b2ed99a32",
+};
+const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
+const db = getFirestore(firebaseApp);
+const googleProvider = new GoogleAuthProvider();
 
 // ── TYPES ─────────────────────────────────────────────────────────────────────
 type MealType = "breakfast" | "lunch" | "snack" | "dinner";
@@ -173,6 +194,36 @@ const RECIPES: Recipe[] = [
   { id:"r37", type:"dinner", name:"Masoor Dal + Jeera Rice", calories:420, protein:22, carbs:66, fat:8, prepTime:25, tags:["high-protein","vegan","quick","easy"], emoji:"🫗", ingredients:[{n:"Red lentils (masoor dal)",q:"½ cup",cat:"grains"},{n:"Rice",q:"½ cup",cat:"grains"},{n:"Onion",q:"1",cat:"vegetables"},{n:"Tomato",q:"2",cat:"vegetables"},{n:"Cumin seeds",q:"1.5 tsp",cat:"spices"},{n:"Turmeric + coriander powder",q:"½ tsp each",cat:"spices"}], steps:["Pressure cook masoor dal with turmeric (2-3 whistles).","Cook rice with cumin seeds for jeera rice.","Sauté onions, add tomatoes and spices. Mix into cooked dal.","Simmer together 5 min for flavours to blend.","Serve dal over jeera rice with pickle and papad."] },
   { id:"r38", type:"dinner", name:"Chilli Paneer", calories:460, protein:28, carbs:42, fat:18, prepTime:25, tags:["high-protein","indo-chinese","spicy","quick"], emoji:"🌶️", ingredients:[{n:"Paneer",q:"250g",cat:"dairy"},{n:"Capsicum",q:"2",cat:"vegetables"},{n:"Onion",q:"1 large",cat:"vegetables"},{n:"Soy sauce",q:"2 tbsp",cat:"pantry"},{n:"Cornflour",q:"3 tbsp",cat:"grains"},{n:"Garlic",q:"6 cloves",cat:"spices"},{n:"Green chillies",q:"3",cat:"vegetables"}], steps:["Cut paneer into cubes. Toss in cornflour and salt, pan-fry until crispy.","Sauté garlic and green chillies on high heat.","Add diced onion and capsicum, stir fry 3 min (keep crunchy).","Add soy sauce and a splash of water. Toss in paneer.","Stir fry 2 min on high heat. Serve as starter or with fried rice."] },
   { id:"r39", type:"dinner", name:"Kadhi Pakora", calories:350, protein:14, carbs:40, fat:13, prepTime:35, tags:["classic","north-indian","comfort-food"], emoji:"🟡", ingredients:[{n:"Besan (gram flour)",q:"½ cup",cat:"grains"},{n:"Curd",q:"1.5 cups",cat:"dairy"},{n:"Onion",q:"1",cat:"vegetables"},{n:"Spinach / methi leaves",q:"½ cup",cat:"vegetables"},{n:"Mustard seeds + curry leaves",q:"½ tsp each",cat:"spices"},{n:"Turmeric + red chilli powder",q:"½ tsp each",cat:"spices"}], steps:["Mix besan + onion + spinach + spices, form small pakoras. Fry until crispy.","Whisk curd with besan, turmeric, and 2 cups water.","Cook mixture on medium heat stirring constantly until thickened.","Temper with mustard seeds, curry leaves and dried chillies. Pour over kadhi.","Add pakoras, simmer 5 min. Serve with steamed rice."] },
+
+  // ── MORE BREAKFAST ────────────────────────────────────────────────────────
+  { id:"r40", type:"breakfast", name:"Pesarattu (Green Moong Dosa)", calories:310, protein:18, carbs:42, fat:6, prepTime:15, tags:["high-protein","vegan","andhra","gluten-free"], emoji:"🟩", ingredients:[{n:"Whole green moong",q:"1 cup",cat:"grains"},{n:"Ginger",q:"1 inch",cat:"spices"},{n:"Green chilli",q:"2",cat:"vegetables"},{n:"Onion",q:"1 small",cat:"vegetables"},{n:"Cumin seeds",q:"1 tsp",cat:"spices"},{n:"Coriander",q:"handful",cat:"vegetables"}], steps:["Soak whole moong overnight. Drain and grind with ginger and chilli to batter.","Add cumin, salt and thin with water to pouring consistency.","Heat iron tawa, spread thin dosa, scatter chopped onion and coriander.","Cook 3-4 min until edges crisp. No need to flip.","Serve with ginger chutney or coconut chutney."] },
+  { id:"r41", type:"breakfast", name:"Sabudana Khichdi", calories:380, protein:6, carbs:70, fat:10, prepTime:20, tags:["vegan","fasting-friendly","maharashtrian"], emoji:"🫧", ingredients:[{n:"Sabudana (tapioca pearls)",q:"¾ cup",cat:"grains"},{n:"Roasted peanuts (crushed)",q:"¼ cup",cat:"pantry"},{n:"Potato",q:"1 medium",cat:"vegetables"},{n:"Green chilli",q:"2",cat:"vegetables"},{n:"Cumin seeds",q:"1 tsp",cat:"spices"},{n:"Ghee",q:"1 tbsp",cat:"dairy"},{n:"Lemon juice",q:"1 tbsp",cat:"vegetables"}], steps:["Soak sabudana in water 4-6 hrs until soft. Drain completely.","Boil and cube potato. Crush peanuts coarsely.","Heat ghee, add cumin, then diced potato. Cook 3 min.","Add sabudana, chilli, peanuts, salt. Mix gently.","Cook 5-7 min stirring until translucent. Finish with lemon juice."] },
+  { id:"r42", type:"breakfast", name:"Multigrain Thalipeeth", calories:340, protein:14, carbs:52, fat:8, prepTime:20, tags:["high-protein","maharashtrian","vegan"], emoji:"🫓", ingredients:[{n:"Jowar flour",q:"¼ cup",cat:"grains"},{n:"Bajra flour",q:"¼ cup",cat:"grains"},{n:"Besan",q:"¼ cup",cat:"grains"},{n:"Wheat flour",q:"¼ cup",cat:"grains"},{n:"Onion",q:"1",cat:"vegetables"},{n:"Coriander + green chilli",q:"handful + 1",cat:"vegetables"},{n:"Sesame seeds",q:"1 tsp",cat:"spices"}], steps:["Mix all flours with chopped onion, coriander, chilli, sesame and salt.","Add water gradually to form a semi-soft dough.","Place dough ball on greased tawa and pat flat with wet fingers into a thick circle.","Make a hole in centre. Cook on medium heat with oil until golden on both sides.","Serve hot with curd and pickle."] },
+  { id:"r43", type:"breakfast", name:"Tofu Bhurji Toast", calories:360, protein:22, carbs:38, fat:14, prepTime:10, tags:["high-protein","vegan","fusion","quick"], emoji:"🍳", ingredients:[{n:"Firm tofu",q:"200g",cat:"dairy"},{n:"Onion",q:"1",cat:"vegetables"},{n:"Capsicum",q:"½",cat:"vegetables"},{n:"Tomato",q:"1",cat:"vegetables"},{n:"Turmeric + cumin powder",q:"½ tsp each",cat:"spices"},{n:"Whole wheat bread",q:"2 slices",cat:"grains"}], steps:["Crumble tofu finely with your hands.","Sauté onion 2 min, add capsicum and tomato.","Add turmeric, cumin powder, and salt. Cook 2 min.","Add crumbled tofu, mix well and cook 4 min.","Toast bread, top generously with tofu bhurji. Serve hot."] },
+  { id:"r44", type:"breakfast", name:"Ragi Porridge", calories:260, protein:8, carbs:46, fat:5, prepTime:10, tags:["vegan","calcium-rich","gluten-free","light"], emoji:"🥣", ingredients:[{n:"Ragi flour",q:"4 tbsp",cat:"grains"},{n:"Milk / Oat milk",q:"1.5 cups",cat:"dairy"},{n:"Banana",q:"1",cat:"vegetables"},{n:"Jaggery",q:"1 tbsp",cat:"pantry"},{n:"Cardamom powder",q:"pinch",cat:"spices"},{n:"Almonds (sliced)",q:"6",cat:"pantry"}], steps:["Dissolve ragi flour in ¼ cup cold milk, ensuring no lumps.","Bring remaining milk to boil in a saucepan.","Pour ragi mixture into boiling milk, stirring continuously.","Cook 5-6 min until thick. Add jaggery and cardamom.","Pour into bowl, top with sliced banana and almonds."] },
+  { id:"r45", type:"breakfast", name:"Makhana Smoothie", calories:290, protein:12, carbs:44, fat:7, prepTime:8, tags:["high-protein","no-cook","sweet","calcium-rich"], emoji:"🥛", ingredients:[{n:"Roasted makhana",q:"½ cup",cat:"pantry"},{n:"Milk",q:"1.5 cups",cat:"dairy"},{n:"Banana",q:"1",cat:"vegetables"},{n:"Dates",q:"3",cat:"pantry"},{n:"Cardamom powder",q:"pinch",cat:"spices"}], steps:["Add all ingredients to blender.","Blend until completely smooth (~90 sec).","Taste and adjust sweetness with dates.","Pour and serve immediately or chill 30 min for a thicker version."] },
+  // ── MORE LUNCH ─────────────────────────────────────────────────────────────
+  { id:"r46", type:"lunch", name:"Vegetable Biryani", calories:520, protein:14, carbs:82, fat:14, prepTime:45, tags:["festive","vegan","one-pot","aromatic"], emoji:"🍚", ingredients:[{n:"Basmati rice",q:"¾ cup",cat:"grains"},{n:"Mixed vegetables (potato, carrot, peas)",q:"2 cups",cat:"vegetables"},{n:"Onion (fried golden)",q:"2 large",cat:"vegetables"},{n:"Whole spices (bay leaf, cardamom)",q:"2-3 each",cat:"spices"},{n:"Biryani masala",q:"2 tsp",cat:"spices"},{n:"Saffron + warm milk",q:"pinch + 3 tbsp",cat:"dairy"},{n:"Ghee",q:"2 tbsp",cat:"dairy"}], steps:["Par-cook soaked basmati rice to 70%. Set aside.","Sauté whole spices, add onion until deep golden.","Add vegetables and biryani masala, cook 5 min.","Layer rice over vegetable gravy in a heavy pot.","Pour saffron milk and ghee on top. Cover tight, cook 20 min on low (dum)."] },
+  { id:"r47", type:"lunch", name:"Aloo Gobi Sabzi + Roti", calories:420, protein:11, carbs:66, fat:12, prepTime:25, tags:["classic","vegan","punjabi"], emoji:"🥔", ingredients:[{n:"Potato",q:"2 medium",cat:"vegetables"},{n:"Cauliflower",q:"½ head",cat:"vegetables"},{n:"Onion",q:"1",cat:"vegetables"},{n:"Tomato",q:"2",cat:"vegetables"},{n:"Cumin + coriander + garam masala",q:"1 tsp each",cat:"spices"},{n:"Whole wheat roti",q:"3",cat:"grains"}], steps:["Cut potato and cauliflower into florets. Par-boil potato 5 min.","Heat oil, add cumin seeds. Sauté onion golden.","Add tomatoes and all spices, cook until oil separates.","Add potato and cauliflower. Cover and cook 15 min.","Finish with coriander leaves. Serve with hot roti."] },
+  { id:"r48", type:"lunch", name:"Moong Dal Soup + Rice", calories:390, protein:22, carbs:58, fat:7, prepTime:20, tags:["high-protein","vegan","light","easy"], emoji:"🍵", ingredients:[{n:"Yellow moong dal",q:"½ cup",cat:"grains"},{n:"Brown rice",q:"¼ cup",cat:"grains"},{n:"Spinach",q:"1 cup",cat:"vegetables"},{n:"Garlic",q:"4 cloves",cat:"spices"},{n:"Ginger",q:"1 inch",cat:"spices"},{n:"Cumin seeds + turmeric",q:"1 tsp each",cat:"spices"}], steps:["Pressure cook moong dal with turmeric and garlic (3 whistles).","Cook brown rice separately.","Blend half the dal for a creamy texture. Stir back.","Add spinach and ginger, simmer 5 min.","Season with salt, cumin tadka. Serve dal soup alongside rice."] },
+  { id:"r49", type:"lunch", name:"Paneer & Spinach Wrap", calories:470, protein:28, carbs:48, fat:18, prepTime:15, tags:["high-protein","quick","fusion"], emoji:"🌯", ingredients:[{n:"Paneer",q:"150g",cat:"dairy"},{n:"Spinach leaves",q:"1 cup",cat:"vegetables"},{n:"Whole wheat roti",q:"2",cat:"grains"},{n:"Hung curd",q:"3 tbsp",cat:"dairy"},{n:"Onion",q:"1 small",cat:"vegetables"},{n:"Chaat masala",q:"½ tsp",cat:"spices"},{n:"Green chutney",q:"2 tbsp",cat:"pantry"}], steps:["Slice paneer and pan-grill until golden on both sides.","Mix hung curd with chaat masala and salt.","Warm roti on tawa.","Spread green chutney, then curd mix on roti.","Layer spinach, paneer slices and sliced onion. Roll tight and serve."] },
+  { id:"r50", type:"lunch", name:"Chole Kulche", calories:560, protein:20, carbs:84, fat:14, prepTime:30, tags:["street-food","high-protein","north-indian"], emoji:"🫓", ingredients:[{n:"Chickpeas (boiled)",q:"1.5 cups",cat:"grains"},{n:"Kulche / naan",q:"2",cat:"grains"},{n:"Onion",q:"2",cat:"vegetables"},{n:"Tomatoes",q:"3",cat:"vegetables"},{n:"Amchur + anardana powder",q:"1 tsp each",cat:"spices"},{n:"Chole masala",q:"2 tsp",cat:"spices"}], steps:["Deep-cook onions until dark brown. Add ginger-garlic paste.","Add blended tomatoes, chole masala, cook until thick.","Add chickpeas with ½ cup water, simmer 20 min.","Finish with amchur and anardana for tanginess.","Toast kulche on tawa with butter. Serve chole alongside."] },
+  { id:"r51", type:"lunch", name:"Rava Dhokla", calories:290, protein:12, carbs:46, fat:7, prepTime:25, tags:["vegan","gujarati","steamed","light"], emoji:"🟨", ingredients:[{n:"Semolina (suji)",q:"1 cup",cat:"grains"},{n:"Curd",q:"½ cup",cat:"dairy"},{n:"Eno fruit salt",q:"1 tsp",cat:"pantry"},{n:"Mustard seeds + curry leaves",q:"½ tsp each",cat:"spices"},{n:"Green chilli",q:"2",cat:"vegetables"},{n:"Sesame seeds",q:"1 tsp",cat:"spices"}], steps:["Mix suji with curd, salt, green chilli paste and water. Rest 15 min.","Just before steaming, add eno and mix gently.","Pour into greased plate, steam 12-15 min until firm.","Temper mustard, curry leaves and sesame in oil. Pour over dhokla.","Cut into squares. Serve with green chutney."] },
+  { id:"r52", type:"lunch", name:"Stuffed Capsicum", calories:380, protein:18, carbs:44, fat:14, prepTime:30, tags:["high-protein","baked","creative"], emoji:"🫑", ingredients:[{n:"Capsicum (large, halved)",q:"3",cat:"vegetables"},{n:"Paneer (crumbled)",q:"150g",cat:"dairy"},{n:"Corn kernels",q:"½ cup",cat:"vegetables"},{n:"Onion",q:"1",cat:"vegetables"},{n:"Cooked rice",q:"½ cup",cat:"grains"},{n:"Biryani masala",q:"1 tsp",cat:"spices"}], steps:["Halve capsicums, remove seeds. Rub with oil and bake 10 min at 200°C.","Sauté onion, add paneer, corn, rice and masala. Cook 5 min.","Fill capsicum halves generously with mixture.","Bake 15 min until capsicum softens.","Serve warm with coriander chutney."] },
+  // ── MORE SNACKS ────────────────────────────────────────────────────────────
+  { id:"r53", type:"snack", name:"Paneer Tikka Skewers", calories:220, protein:18, carbs:8, fat:14, prepTime:20, tags:["high-protein","keto-friendly","grilled"], emoji:"🍢", ingredients:[{n:"Paneer",q:"150g",cat:"dairy"},{n:"Capsicum + onion",q:"½ each",cat:"vegetables"},{n:"Hung curd",q:"3 tbsp",cat:"dairy"},{n:"Tikka masala",q:"1 tsp",cat:"spices"},{n:"Lemon juice",q:"1 tbsp",cat:"vegetables"},{n:"Chaat masala",q:"pinch",cat:"spices"}], steps:["Cube paneer and vegetables.","Mix hung curd, tikka masala, lemon juice and salt.","Marinate paneer and veggies 15 min in the curd mix.","Thread onto skewers, alternating paneer and vegetables.","Grill or air fry 10-12 min until charred. Sprinkle chaat masala before serving."] },
+  { id:"r54", type:"snack", name:"Roasted Chana", calories:160, protein:10, carbs:24, fat:3, prepTime:5, tags:["high-protein","vegan","no-cook","crunchy"], emoji:"🫘", ingredients:[{n:"Roasted chana (bhuna chana)",q:"½ cup",cat:"pantry"},{n:"Chaat masala",q:"½ tsp",cat:"spices"},{n:"Lemon juice",q:"1 tsp",cat:"vegetables"},{n:"Red chilli powder",q:"pinch",cat:"spices"}], steps:["Place roasted chana in a bowl.","Squeeze lemon juice over it.","Sprinkle chaat masala and red chilli powder.","Toss well and serve immediately.","Store leftover in an airtight jar for up to a week."] },
+  { id:"r55", type:"snack", name:"Poha Chivda", calories:190, protein:5, carbs:34, fat:6, prepTime:10, tags:["vegan","light","maharashtrian","crunchy"], emoji:"✨", ingredients:[{n:"Thin poha",q:"1.5 cups",cat:"grains"},{n:"Peanuts",q:"3 tbsp",cat:"pantry"},{n:"Cashews",q:"10",cat:"pantry"},{n:"Curry leaves",q:"8-10",cat:"spices"},{n:"Turmeric + red chilli powder",q:"¼ tsp each",cat:"spices"},{n:"Sugar",q:"1 tsp",cat:"pantry"}], steps:["Dry roast thin poha in a pan 5 min until crispy. Set aside.","In same pan, fry peanuts and cashews until golden.","Add curry leaves, turmeric, chilli powder, salt and sugar.","Toss in the roasted poha and mix well.","Cool completely before storing. Stays crispy for 1 week."] },
+  { id:"r56", type:"snack", name:"Oats Banana Cookies", calories:170, protein:5, carbs:28, fat:5, prepTime:15, tags:["vegan","no-bake","sweet","healthy"], emoji:"🍪", ingredients:[{n:"Rolled oats",q:"1 cup",cat:"grains"},{n:"Ripe banana",q:"2",cat:"vegetables"},{n:"Peanut butter",q:"2 tbsp",cat:"pantry"},{n:"Dark chocolate chips",q:"1 tbsp",cat:"pantry"},{n:"Cinnamon",q:"½ tsp",cat:"spices"}], steps:["Mash bananas well in a bowl.","Add oats, peanut butter, cinnamon and mix thoroughly.","Fold in chocolate chips.","Drop spoonfuls onto a lined tray, flatten slightly.","Bake at 180°C for 12-15 min until golden, or refrigerate 30 min for no-bake version."] },
+  { id:"r57", type:"snack", name:"Sweet / Salted Lassi", calories:150, protein:8, carbs:18, fat:5, prepTime:3, tags:["probiotic","no-cook","quick","cooling"], emoji:"🥛", ingredients:[{n:"Thick curd",q:"1 cup",cat:"dairy"},{n:"Cold water",q:"½ cup",cat:"dairy"},{n:"Sugar / salt",q:"1 tsp",cat:"pantry"},{n:"Cardamom powder",q:"pinch",cat:"spices"},{n:"Rose water (optional)",q:"½ tsp",cat:"pantry"}], steps:["Add curd to blender with water.","Add sugar for sweet lassi or salt + roasted cumin for salted.","Blend 30 seconds until frothy.","Pour into glass over ice.","Garnish with a pinch of cardamom."] },
+  { id:"r58", type:"snack", name:"Peanut Butter Apple Slices", calories:200, protein:7, carbs:26, fat:9, prepTime:3, tags:["no-cook","quick","vegan","sweet"], emoji:"🍎", ingredients:[{n:"Apple",q:"1 large",cat:"vegetables"},{n:"Peanut butter",q:"2 tbsp",cat:"pantry"},{n:"Cinnamon",q:"pinch",cat:"spices"},{n:"Pumpkin seeds",q:"1 tsp",cat:"pantry"}], steps:["Core and slice apple into thin rounds or wedges.","Arrange on a plate.","Dollop peanut butter on each slice.","Sprinkle cinnamon and pumpkin seeds on top.","Eat immediately for best texture."] },
+  // ── MORE DINNER ────────────────────────────────────────────────────────────
+  { id:"r59", type:"dinner", name:"Curd Rice", calories:350, protein:12, carbs:52, fat:10, prepTime:15, tags:["south-indian","classic","probiotic","cooling"], emoji:"🍚", ingredients:[{n:"Cooked rice",q:"1 cup",cat:"grains"},{n:"Thick curd",q:"¾ cup",cat:"dairy"},{n:"Milk",q:"3 tbsp",cat:"dairy"},{n:"Mustard seeds + curry leaves",q:"½ tsp each",cat:"spices"},{n:"Green chilli",q:"1",cat:"vegetables"},{n:"Grated ginger",q:"½ tsp",cat:"spices"},{n:"Pomegranate",q:"2 tbsp",cat:"vegetables"}], steps:["Mash warm rice slightly, mix with curd and milk until creamy.","Heat oil, add mustard seeds, curry leaves, green chilli and ginger.","Pour tadka over curd rice and mix.","Garnish with pomegranate seeds.","Serve at room temperature or chilled."] },
+  { id:"r60", type:"dinner", name:"Mushroom Masala", calories:300, protein:12, carbs:30, fat:14, prepTime:20, tags:["vegan","low-calorie","quick","umami"], emoji:"🍄", ingredients:[{n:"Button mushrooms",q:"250g",cat:"vegetables"},{n:"Onion",q:"2",cat:"vegetables"},{n:"Tomatoes",q:"2",cat:"vegetables"},{n:"Ginger-garlic paste",q:"1 tbsp",cat:"spices"},{n:"Kashmiri chilli + garam masala",q:"1 tsp each",cat:"spices"},{n:"Kasuri methi",q:"1 tsp",cat:"spices"}], steps:["Clean and halve mushrooms.","Sauté onions golden, add ginger-garlic paste.","Add tomatoes and all spices, cook until oil separates.","Add mushrooms and ¼ cup water. Cook 8-10 min.","Crush kasuri methi and add at end. Serve with roti or rice."] },
+  { id:"r61", type:"dinner", name:"Lauki Kofta Curry", calories:360, protein:14, carbs:38, fat:16, prepTime:35, tags:["classic","north-indian","creative"], emoji:"🫙", ingredients:[{n:"Bottle gourd (lauki)",q:"300g",cat:"vegetables"},{n:"Besan",q:"4 tbsp",cat:"grains"},{n:"Onion",q:"2",cat:"vegetables"},{n:"Tomatoes",q:"2",cat:"vegetables"},{n:"Cashew paste",q:"2 tbsp",cat:"pantry"},{n:"Garam masala + coriander powder",q:"1 tsp each",cat:"spices"}], steps:["Grate lauki, squeeze out water. Mix with besan, salt and cumin. Form balls.","Fry or air-fry koftas until golden. Set aside.","Sauté onions, add tomatoes and all spices. Cook until thick.","Add cashew paste and ¾ cup water. Simmer 8 min.","Gently drop koftas in gravy 5 min before serving. Serve with roti."] },
+  { id:"r62", type:"dinner", name:"Pav Bhaji", calories:420, protein:12, carbs:66, fat:12, prepTime:25, tags:["street-food","vegan","classic","crowd-pleaser"], emoji:"🍞", ingredients:[{n:"Mixed vegetables (potato, cauliflower, peas, carrot)",q:"2 cups",cat:"vegetables"},{n:"Butter",q:"2 tbsp",cat:"dairy"},{n:"Pav bhaji masala",q:"2 tsp",cat:"spices"},{n:"Onion",q:"2",cat:"vegetables"},{n:"Tomatoes",q:"3",cat:"vegetables"},{n:"Whole wheat pav / dinner rolls",q:"4",cat:"grains"}], steps:["Pressure cook all vegetables together (3 whistles). Mash well.","Heat butter, sauté onion until golden. Add tomatoes and pav bhaji masala.","Add mashed vegetables, mix and cook 10 min mashing continuously.","Toast pav on tawa with butter until golden.","Serve bhaji topped with onion, butter and lemon wedge."] },
+  { id:"r63", type:"dinner", name:"Miso Tofu Soup + Rice", calories:310, protein:20, carbs:40, fat:8, prepTime:15, tags:["vegan","high-protein","fusion","light"], emoji:"🫕", ingredients:[{n:"Firm tofu",q:"150g",cat:"dairy"},{n:"Miso paste",q:"2 tbsp",cat:"pantry"},{n:"Spinach",q:"½ cup",cat:"vegetables"},{n:"Spring onion",q:"2",cat:"vegetables"},{n:"Mushrooms",q:"½ cup",cat:"vegetables"},{n:"Cooked rice",q:"½ cup",cat:"grains"}], steps:["Bring 3 cups water to boil. Add mushrooms, cook 3 min.","Cube tofu and add to soup. Simmer 3 min.","Remove from heat. Dissolve miso paste in ladle of stock and stir back in.","Add spinach and spring onion.","Serve alongside a small bowl of steamed rice."] },
+  { id:"r64", type:"dinner", name:"Vegetable Khow Suey", calories:450, protein:16, carbs:56, fat:18, prepTime:30, tags:["burmese","fusion","vegan","creamy"], emoji:"🍜", ingredients:[{n:"Noodles (egg-free)",q:"100g",cat:"grains"},{n:"Coconut milk",q:"1 cup",cat:"pantry"},{n:"Mixed vegetables (beans, carrot, broccoli)",q:"1.5 cups",cat:"vegetables"},{n:"Onion",q:"1",cat:"vegetables"},{n:"Turmeric + coriander powder",q:"½ tsp each",cat:"spices"},{n:"Lemon + fried onions",q:"1 each",cat:"vegetables"}], steps:["Cook noodles as per package. Drain and set aside.","Sauté onion, add vegetables and spices. Cook 5 min.","Add coconut milk and ½ cup water. Simmer 8 min.","Ladle curry over noodles in bowl.","Top with fried onions, squeeze of lemon and coriander."] },
 ];
 
 const getByType = (t: MealType): Recipe[] => RECIPES.filter(r => r.type === t);
@@ -196,12 +247,19 @@ const DEFAULT_PANTRY: PantryItem[] = [
 ];
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
-function lsGet<T>(key: string, fallback: T): T {
-  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
-  catch { return fallback; }
+// Firestore save/load per user
+async function fsSet(uid: string, key: string, val: unknown): Promise<void> {
+  try { await setDoc(doc(db, "users", uid), { [key]: JSON.stringify(val) }, { merge: true }); } catch {}
 }
-function lsSet(key: string, val: unknown): void {
-  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+async function fsGet<T>(uid: string, key: string, fallback: T): Promise<T> {
+  try {
+    const snap = await getDoc(doc(db, "users", uid));
+    if (snap.exists()) {
+      const raw = snap.data()[key];
+      return raw ? JSON.parse(raw) : fallback;
+    }
+  } catch {}
+  return fallback;
 }
 
 function calcCalories(p: Omit<Profile, "calorieTarget">): number {
@@ -608,7 +666,7 @@ function RecipesScreen({ favorites, toggleFav }: RecipesScreenProps) {
     <div className="screen">
       <div style={{ background:"var(--green)",padding:"52px 20px 20px" }}>
         <h1 className="serif" style={{ fontSize:22,color:"#fff",marginBottom:4 }}>Recipe Library</h1>
-        <div style={{ fontSize:13,color:"rgba(255,255,255,.7)" }}>41 Indian vegetarian recipes</div>
+        <div style={{ fontSize:13,color:"rgba(255,255,255,.7)" }}>65 Indian vegetarian recipes</div>
       </div>
       <div style={{ padding:"14px 16px 0" }}>
         <div className="search-bar" style={{ marginBottom:10 }}>
@@ -825,11 +883,13 @@ function GroceryScreen({ plan }: GroceryProps) {
 
 // ── PANTRY ────────────────────────────────────────────────────────────────────
 function PantryScreen() {
-  const [items, setItems] = useState<PantryItem[]>(() => lsGet("vegfit-pantry", DEFAULT_PANTRY));
+  const [items, setItems] = useState<PantryItem[]>(() => {
+    try { const v = localStorage.getItem("vegfit-pantry"); return v ? JSON.parse(v) : DEFAULT_PANTRY; } catch { return DEFAULT_PANTRY; }
+  });
   const [adding, setAdding] = useState(false);
   const [newItem, setNewItem] = useState<Omit<PantryItem,"id"|"low">>({ name:"", qty:100, unit:"g", cat:"vegetables" });
 
-  useEffect(() => lsSet("vegfit-pantry", items), [items]);
+  useEffect(() => { try { localStorage.setItem("vegfit-pantry", JSON.stringify(items)); } catch {} }, [items]);
 
   const updateQty = (id: string, delta: number) => setItems(its => its.map(i => i.id===id ? {...i, qty: Math.max(0, i.qty+delta)} : i));
   const remove = (id: string) => setItems(its => its.filter(i => i.id !== id));
@@ -951,37 +1011,167 @@ function PantryScreen() {
   );
 }
 
+// ── SIGN IN SCREEN ────────────────────────────────────────────────────────────
+function SignInScreen({ onSignIn }: { onSignIn: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleGoogle = async () => {
+    setLoading(true); setError("");
+    try {
+      await signInWithPopup(auth, googleProvider);
+      onSignIn();
+    } catch (e: unknown) {
+      setError("Sign in failed. Please try again.");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ minHeight:"100vh", background:"var(--bg)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"24px" }}>
+      <div style={{ textAlign:"center", marginBottom:40 }}>
+        <div style={{ fontSize:72, marginBottom:12 }}>🥗</div>
+        <h1 className="serif" style={{ fontSize:36, color:"var(--text)", marginBottom:8 }}>VegFit</h1>
+        <div style={{ fontSize:15, color:"var(--muted)" }}>Indian Vegetarian Fitness Planner</div>
+      </div>
+
+      <div className="card" style={{ padding:"32px 24px", width:"100%", maxWidth:360, textAlign:"center" }}>
+        <div style={{ fontSize:18, fontWeight:700, marginBottom:8, color:"var(--text)" }}>Welcome back 👋</div>
+        <div style={{ fontSize:13, color:"var(--muted)", marginBottom:28 }}>Sign in to sync your meal plans,<br/>progress and favourites across devices</div>
+
+        <button onClick={handleGoogle} disabled={loading}
+          style={{ width:"100%", padding:"14px", borderRadius:14, border:"1.5px solid var(--border)", background:"#fff", cursor:"pointer",
+            display:"flex", alignItems:"center", justifyContent:"center", gap:12, fontSize:15, fontWeight:600, color:"var(--text)",
+            opacity: loading ? .7 : 1, transition:"all .2s" }}>
+          <svg width="20" height="20" viewBox="0 0 48 48">
+            <path fill="#FFC107" d="M43.6 20H24v8h11.3C33.7 33.1 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 20-9 20-20 0-1.3-.1-2.7-.4-4z"/>
+            <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 15.1 18.9 12 24 12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
+            <path fill="#4CAF50" d="M24 44c5.2 0 9.9-1.9 13.5-5l-6.2-5.2C29.5 35.5 26.9 36 24 36c-5.2 0-9.6-2.9-11.3-7.1l-6.6 5C9.7 39.7 16.3 44 24 44z"/>
+            <path fill="#1976D2" d="M43.6 20H24v8h11.3c-.8 2.3-2.3 4.2-4.2 5.6l6.2 5.2C41 35.4 44 30.1 44 24c0-1.3-.1-2.7-.4-4z"/>
+          </svg>
+          {loading ? "Signing in..." : "Continue with Google"}
+        </button>
+
+        {error && <div style={{ marginTop:12, fontSize:13, color:"var(--red)" }}>{error}</div>}
+
+        <div style={{ marginTop:24, fontSize:11, color:"var(--muted)", lineHeight:1.6 }}>
+          By signing in, your data is securely stored<br/>in the cloud and synced across all your devices.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 type TabId = "home" | "recipes" | "tracker" | "grocery" | "pantry";
 
 export default function VegFit() {
-  const [profile, setProfile]   = useState<Profile | null>(() => lsGet<Profile | null>("vegfit-profile", null));
-  const [tab, setTab]           = useState<TabId>("home");
-  const [plan, setPlan]         = useState<Plan>(() => lsGet<Plan>("vegfit-plan", DEFAULT_PLAN));
-  const [consumed, setConsumed] = useState<Consumed>(() => lsGet<Consumed>("vegfit-consumed", { breakfast:false, lunch:false, snack:false, dinner:false }));
-  const [favorites, setFavorites] = useState<string[]>(() => lsGet<string[]>("vegfit-favorites", []));
+  const [user, setUser]           = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [profile, setProfile]     = useState<Profile | null>(null);
+  const [tab, setTab]             = useState<TabId>("home");
+  const [plan, setPlan]           = useState<Plan>(DEFAULT_PLAN);
+  const [consumed, setConsumed]   = useState<Consumed>({ breakfast:false, lunch:false, snack:false, dinner:false });
+  const [favorites, setFavorites] = useState<string[]>([]);
 
-  const saveProfile  = (p: Profile)  => { setProfile(p);   lsSet("vegfit-profile", p); };
-  const savePlan     = (p: Plan)     => { setPlan(p);       lsSet("vegfit-plan", p); };
-  const saveConsumed = (c: Consumed) => { setConsumed(c);   lsSet("vegfit-consumed", c); };
-  const toggleFav    = (id: string)  => {
+  // Listen for auth state
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      setUser(u);
+      if (u) {
+        setDataLoading(true);
+        const [prof, pl, cons, favs] = await Promise.all([
+          fsGet<Profile | null>(u.uid, "profile", null),
+          fsGet<Plan>(u.uid, "plan", DEFAULT_PLAN),
+          fsGet<Consumed>(u.uid, "consumed", { breakfast:false, lunch:false, snack:false, dinner:false }),
+          fsGet<string[]>(u.uid, "favorites", []),
+        ]);
+        setProfile(prof);
+        setPlan(pl);
+        setConsumed(cons);
+        setFavorites(favs);
+        setDataLoading(false);
+      } else {
+        setProfile(null);
+      }
+      setAuthLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  const saveProfile = async (p: Profile) => {
+    setProfile(p);
+    if (user) await fsSet(user.uid, "profile", p);
+  };
+  const savePlan = async (p: Plan) => {
+    setPlan(p);
+    if (user) await fsSet(user.uid, "plan", p);
+  };
+  const saveConsumed = async (c: Consumed) => {
+    setConsumed(c);
+    if (user) await fsSet(user.uid, "consumed", c);
+  };
+  const toggleFav = async (id: string) => {
     const next = favorites.includes(id) ? favorites.filter(f => f !== id) : [...favorites, id];
-    setFavorites(next); lsSet("vegfit-favorites", next);
+    setFavorites(next);
+    if (user) await fsSet(user.uid, "favorites", next);
+  };
+  const handleSignOut = async () => {
+    await signOut(auth);
+    setProfile(null); setPlan(DEFAULT_PLAN);
+    setConsumed({ breakfast:false, lunch:false, snack:false, dinner:false });
+    setFavorites([]);
   };
 
+  // Loading spinner
+  if (authLoading || dataLoading) return (
+    <div style={{ minHeight:"100vh", background:"var(--bg)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16 }}>
+      <div style={{ fontSize:48 }}>🥗</div>
+      <div style={{ fontSize:14, color:"var(--muted)" }}>{authLoading ? "Loading..." : "Syncing your data..."}</div>
+      <div style={{ width:40, height:40, border:"3px solid var(--border)", borderTopColor:"var(--green)", borderRadius:"50%", animation:"spin 1s linear infinite" }} />
+    </div>
+  );
+
+  // Not signed in
+  if (!user) return <div className="app"><SignInScreen onSignIn={() => {}} /></div>;
+
+  // Signed in but no profile yet → onboarding
   if (!profile) return <div className="app"><Onboarding onComplete={saveProfile} /></div>;
 
   const tabs: { id: TabId; label: string; icon: React.ReactNode; activeIcon: React.ReactNode }[] = [
-    { id:"home",    label:"Plan",    icon:<Home    size={22} color="var(--muted)" />, activeIcon:<Home    size={22} color="var(--green)" /> },
-    { id:"recipes", label:"Recipes", icon:<BookOpen size={22} color="var(--muted)" />, activeIcon:<BookOpen size={22} color="var(--green)" /> },
-    { id:"tracker", label:"Track",   icon:<BarChart2 size={22} color="var(--muted)" />, activeIcon:<BarChart2 size={22} color="var(--green)" /> },
+    { id:"home",    label:"Plan",    icon:<Home         size={22} color="var(--muted)" />, activeIcon:<Home         size={22} color="var(--green)" /> },
+    { id:"recipes", label:"Recipes", icon:<BookOpen     size={22} color="var(--muted)" />, activeIcon:<BookOpen     size={22} color="var(--green)" /> },
+    { id:"tracker", label:"Track",   icon:<BarChart2    size={22} color="var(--muted)" />, activeIcon:<BarChart2    size={22} color="var(--green)" /> },
     { id:"grocery", label:"Grocery", icon:<ShoppingCart size={22} color="var(--muted)" />, activeIcon:<ShoppingCart size={22} color="var(--green)" /> },
-    { id:"pantry",  label:"Pantry",  icon:<Package size={22} color="var(--muted)" />, activeIcon:<Package size={22} color="var(--green)" /> },
+    { id:"pantry",  label:"Pantry",  icon:<Package      size={22} color="var(--muted)" />, activeIcon:<Package      size={22} color="var(--green)" /> },
   ];
 
   return (
     <div className="app">
-      <div style={{ height:"100vh",overflowY:"auto" }} className="fade-in">
+      {/* User avatar + sign out bar */}
+      <div style={{ position:"fixed", top:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:430, zIndex:200,
+        background:"rgba(58,107,53,0.95)", backdropFilter:"blur(8px)",
+        display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 16px",
+        paddingTop:"max(10px, env(safe-area-inset-top))" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          {user.photoURL
+            ? <img src={user.photoURL} style={{ width:28, height:28, borderRadius:"50%", border:"2px solid rgba(255,255,255,.4)" }} />
+            : <div style={{ width:28, height:28, borderRadius:"50%", background:"rgba(255,255,255,.3)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700, color:"#fff" }}>
+                {user.displayName?.[0] ?? "U"}
+              </div>}
+          <div style={{ fontSize:13, color:"#fff", fontWeight:600, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+            {user.displayName ?? user.email}
+          </div>
+        </div>
+        <button onClick={handleSignOut}
+          style={{ background:"rgba(255,255,255,.2)", border:"none", borderRadius:8, padding:"6px 10px", cursor:"pointer",
+            display:"flex", alignItems:"center", gap:5, color:"#fff", fontSize:12, fontWeight:600 }}>
+          <LogOut size={13} color="#fff" /> Sign out
+        </button>
+      </div>
+
+      <div style={{ height:"100vh", overflowY:"auto", paddingTop:50 }} className="fade-in">
         {tab === "home"    && <HomeScreen    profile={profile} plan={plan} setPlan={savePlan} consumed={consumed} setConsumed={saveConsumed} favorites={favorites} toggleFav={toggleFav} />}
         {tab === "recipes" && <RecipesScreen favorites={favorites} toggleFav={toggleFav} />}
         {tab === "tracker" && <TrackerScreen profile={profile} plan={plan} consumed={consumed} setConsumed={saveConsumed} />}
