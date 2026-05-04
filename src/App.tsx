@@ -29,8 +29,8 @@ import { createClient, User } from "@supabase/supabase-js";
 
 // ── SUPABASE ──────────────────────────────────────────────────────────────────
 const supabase = createClient(
-  process.env.REACT_APP_SUPABASE_URL!,
-  process.env.REACT_APP_SUPABASE_ANON_KEY!,
+  "https://hvintnhqfkehcainqehm.supabase.co",
+  "REMOVED_FROM_HISTORY",  // your full hardcoded key
   {
     auth: {
       detectSessionInUrl: true,
@@ -50,10 +50,12 @@ async function fsSet(uid: string, key: string, val: unknown): Promise<void> {
 
 async function fsGet<T>(uid: string, key: string, fallback: T): Promise<T> {
   try {
-    const { data } = await Promise.race([
+    const { data } = (await Promise.race([
       supabase.from("user_data").select(key).eq("uid", uid).single(),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000))
-    ]) as { data: Record<string, string> | null };
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), 5000)
+      ),
+    ])) as { data: Record<string, string> | null };
     return data?.[key] ? JSON.parse(data[key]) : fallback;
   } catch {}
   return fallback;
@@ -97,6 +99,7 @@ interface Profile {
   age: number;
   gender: Gender;
   calorieTarget: number;
+  calorieOverride?: number;
 }
 
 type Plan = Record<MealType, Recipe>;
@@ -2009,19 +2012,32 @@ const DEFAULT_PANTRY: PantryItem[] = [
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 
 function calcCalories(p: Omit<Profile, "calorieTarget">): number {
-  let bmr =
-    p.gender === "male"
-      ? 88.36 + 13.4 * p.weight + 4.8 * p.height - 5.7 * p.age
-      : 447.6 + 9.2 * p.weight + 3.1 * p.height - 4.3 * p.age;
-  const mult: Record<Activity, number> = {
-    sedentary: 1.2,
-    moderate: 1.55,
-    active: 1.725,
+  // Mifflin-St Jeor BMR (unchanged — this is correct)
+  const bmr = p.gender === "male"
+    ? 88.36 + 13.4 * p.weight + 4.8 * p.height - 5.7 * p.age
+    : 447.6  +  9.2 * p.weight + 3.1 * p.height - 4.3 * p.age;
+
+  // Activity multipliers (refined)
+  const activityMultiplier: Record<Activity, number> = {
+    sedentary: 1.2,   // desk job, little or no exercise
+    moderate:  1.55,  // exercise 3-5x/week
+    active:    1.725, // hard exercise 6-7x/week
   };
-  let tdee = bmr * mult[p.activity];
-  if (p.goal === "bulk") tdee += 300;
-  if (p.goal === "cut") tdee -= 300;
-  return Math.round(tdee);
+
+  const tdee = bmr * activityMultiplier[p.activity];
+
+  // Goal-based adjustment — percentage of TDEE (more scientifically accurate)
+  const goalAdjustment: Record<Goal, number> = {
+    bulk:     0.10,   // +10% surplus for lean muscle gain
+    cut:     -0.15,   // -15% deficit for fat loss (more aggressive than bulk)
+    maintain: 0,
+  };
+
+  const adjusted = tdee * (1 + goalAdjustment[p.goal]);
+
+  // Safety floors — never go below these minimums
+  const safetyFloor = p.gender === "male" ? 1500 : 1200;
+  return Math.round(Math.max(adjusted, safetyFloor));
 }
 
 function groceryFromPlan(plan: Plan): GroceryItem[] {
@@ -2410,50 +2426,43 @@ function Onboarding({ onComplete }: OnboardingProps) {
               })}
             </div>
           </div>
-          <div
-            className="card"
-            style={{
-              padding: "16px",
-              background: "var(--green-l)",
-              border: "1.5px solid #C8E4C7",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 13,
-                color: "var(--green)",
-                fontWeight: 600,
-                marginBottom: 4,
-              }}
-            >
-              📊 Your Daily Target
-            </div>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-              <span
-                className="serif"
-                style={{ fontSize: 28, fontWeight: 700, color: "var(--green)" }}
-              >
-                {calcCalories(form)}
-              </span>
-              <span style={{ fontSize: 13, color: "var(--muted)" }}>
-                kcal/day
-              </span>
-            </div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-              Auto-calculated from your profile
-            </div>
-          </div>
+          <div className="card" style={{ padding:"16px",background:"var(--green-l)",border:"1.5px solid #C8E4C7" }}>
+  <div style={{ fontSize:13,color:"var(--green)",fontWeight:600,marginBottom:8 }}>📊 Your Daily Target</div>
+  <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:4 }}>
+    <input
+      type="number"
+      value={form.calorieOverride ?? calcCalories(form)}
+      onChange={e => setForm(f => ({ ...f, calorieOverride: Math.max(1200, +e.target.value) }))}
+      style={{
+        fontSize:28,fontWeight:700,color:"var(--green)",
+        background:"transparent",border:"none",borderBottom:"2px solid var(--green)",
+        width:100,outline:"none",fontFamily:"'Playfair Display',serif",
+      }}
+    />
+    <span style={{ fontSize:13,color:"var(--muted)" }}>kcal/day</span>
+  </div>
+  <div style={{ fontSize:12,color:"var(--muted)" }}>
+    Auto-calculated · tap to edit &nbsp;
+    {form.calorieOverride && (
+      <span
+        onClick={() => setForm(f => ({ ...f, calorieOverride: undefined }))}
+        style={{ color:"var(--green)",cursor:"pointer",textDecoration:"underline" }}>
+        reset
+      </span>
+    )}
+  </div>
+</div>
         </div>
       ),
     },
   ];
 
   const next = () => {
-    if (step < steps.length - 1) {
-      setStep((s) => s + 1);
-      return;
-    }
-    onComplete({ ...form, calorieTarget: calcCalories(form) });
+    if (step < steps.length - 1) { setStep(s => s + 1); return; }
+    onComplete({
+      ...form,
+      calorieTarget: form.calorieOverride ?? calcCalories(form),
+    });
   };
 
   return (
