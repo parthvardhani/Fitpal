@@ -3,8 +3,26 @@
  * sync-from-notion.ts — scripts/sync-from-notion.ts
  * Run: npx tsx scripts/sync-from-notion.ts
  *
- * Uses native fetch (built into Node 18+) — no Notion SDK needed.
- * Avoids all ESM/CJS import issues on Node v24.
+ * Syncs from Notion → App.tsx:
+ *   - name, type, emoji, calories, macros, prepTime, tags, imageUrl
+ *   - ingredients (pipe-separated: "Name | quantity | category")
+ *   - steps (one per line)
+ *
+ * Notion columns needed:
+ *   Recipe ID      → Text
+ *   Name           → Title
+ *   Meal Type      → Select (Breakfast/Lunch/Snack/Dinner)
+ *   Emoji          → Text
+ *   Calories (kcal)→ Number
+ *   Protein (g)    → Number
+ *   Carbs (g)      → Number
+ *   Fat (g)        → Number
+ *   Prep Time (min)→ Number
+ *   Tags           → Multi-select
+ *   Image URL      → URL
+ *   Ingredients    → Text  (one per line: "Name | quantity | category")
+ *   Steps          → Text  (one step per line)
+ *   Status         → Select (Active/Draft/Archived)
  */
 
 const fs   = require("fs");
@@ -26,21 +44,18 @@ if (fs.existsSync(envPath)) {
 const NOTION_TOKEN = process.env.NOTION_TOKEN       || "";
 const DATABASE_ID  = process.env.NOTION_DATABASE_ID || "";
 
-console.log("🔑  TOKEN  :", NOTION_TOKEN ? `✅ (${NOTION_TOKEN.slice(0,10)}...)` : "❌ MISSING");
-console.log("🗄   DB ID  :", DATABASE_ID  ? `✅ (${DATABASE_ID.slice(0,8)}...)`  : "❌ MISSING");
-
 if (!NOTION_TOKEN || !DATABASE_ID) {
-  console.error("❌  Fix your .env and retry."); process.exit(1);
+  console.error("❌  Missing NOTION_TOKEN or NOTION_DATABASE_ID in .env");
+  process.exit(1);
 }
 
 const APP_PATH = path.resolve(process.cwd(), "src/App.tsx");
-console.log("📱  App.tsx:", fs.existsSync(APP_PATH) ? "✅ found" : "❌ NOT FOUND");
 
-// ── Notion REST API via native fetch (no SDK) ─────────────────────────────────
+// ── Notion REST API via native fetch ──────────────────────────────────────────
 async function notionQuery(startCursor) {
   const body = {
     filter: { property: "Status", select: { equals: "Active" } },
-    sorts:  [
+    sorts: [
       { property: "Meal Type", direction: "ascending" },
       { property: "Name",      direction: "ascending" },
     ],
@@ -49,7 +64,7 @@ async function notionQuery(startCursor) {
   if (startCursor) body.start_cursor = startCursor;
 
   const res = await fetch(`https://api.notion.com/v1/databases/${DATABASE_ID}/query`, {
-    method:  "POST",
+    method: "POST",
     headers: {
       "Authorization":  `Bearer ${NOTION_TOKEN}`,
       "Notion-Version": "2022-06-28",
@@ -58,10 +73,7 @@ async function notionQuery(startCursor) {
     body: JSON.stringify(body),
   });
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Notion API error ${res.status}: ${err}`);
-  }
+  if (!res.ok) throw new Error(`Notion API ${res.status}: ${await res.text()}`);
   return res.json();
 }
 
@@ -88,30 +100,66 @@ function str(prop) {
   return "";
 }
 
+// ── Parse ingredients from Notion text ───────────────────────────────────────
+// Format per line: "Name | quantity | category"
+// e.g. "Moong dal (split) | ½ cup | grains"
+function parseIngredients(text) {
+  if (!text || !text.trim()) return "[]";
+
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  const items = lines.map(line => {
+    const parts = line.split("|").map(p => p.trim());
+    const n   = (parts[0] || "").replace(/"/g, '\\"');
+    const q   = (parts[1] || "").replace(/"/g, '\\"');
+    const cat = (parts[2] || "pantry").replace(/"/g, '\\"');
+    return `      { n: "${n}", q: "${q}", cat: "${cat}" }`;
+  });
+
+  return `[\n${items.join(",\n")},\n    ]`;
+}
+
+// ── Parse steps from Notion text ─────────────────────────────────────────────
+// One step per line
+function parseSteps(text) {
+  if (!text || !text.trim()) return "[]";
+
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  const items = lines.map(line => {
+    const escaped = line.replace(/"/g, '\\"');
+    return `      "${escaped}"`;
+  });
+
+  return `[\n${items.join(",\n")},\n    ]`;
+}
+
+// ── Map Notion pages to recipe objects ───────────────────────────────────────
 function parsePages(pages) {
   const map = {};
   for (const page of pages) {
     const p  = page.properties;
     const id = str(p["Recipe ID"]);
     if (!id) { console.warn("  ⚠️  Skipped — no Recipe ID:", str(p["Name"])); continue; }
+
     map[id] = {
       id,
-      name:     str(p["Name"])             || "Unnamed",
-      type:     (str(p["Meal Type"]) || "breakfast").toLowerCase(),
-      emoji:    str(p["Emoji"])            || "🍽️",
-      calories: str(p["Calories (kcal)"]) || 0,
-      protein:  str(p["Protein (g)"])     || 0,
-      carbs:    str(p["Carbs (g)"])       || 0,
-      fat:      str(p["Fat (g)"])         || 0,
-      prepTime: str(p["Prep Time (min)"]) || 0,
-      tags:     str(p["Tags"])            || [],
-      imageUrl: str(p["Image URL"])       || "",
+      name:        str(p["Name"])             || "Unnamed",
+      type:        (str(p["Meal Type"]) || "breakfast").toLowerCase(),
+      emoji:       str(p["Emoji"])            || "🍽️",
+      calories:    str(p["Calories (kcal)"]) || 0,
+      protein:     str(p["Protein (g)"])     || 0,
+      carbs:       str(p["Carbs (g)"])       || 0,
+      fat:         str(p["Fat (g)"])         || 0,
+      prepTime:    str(p["Prep Time (min)"]) || 0,
+      tags:        str(p["Tags"])            || [],
+      imageUrl:    str(p["Image URL"])       || "",
+      ingredients: str(p["Ingredients"])     || "",
+      steps:       str(p["Steps"])           || "",
     };
   }
   return map;
 }
 
-// ── Parse existing App.tsx recipes ────────────────────────────────────────────
+// ── Parse existing recipes from App.tsx (to preserve data if Notion is empty) ─
 function parseExistingRecipes(source) {
   const markerMatch = source.match(
     /\/\/ ── AUTO-GENERATED-RECIPES-START[\s\S]*?const RECIPES: Recipe\[\] = \[([\s\S]*?)\];\n\/\/ ── AUTO-GENERATED-RECIPES-END/
@@ -133,21 +181,39 @@ function parseExistingRecipes(source) {
 }
 
 function extractIngredientsAndSteps(block) {
-  const ingMatch   = block.match(/ingredients:\s*(\[[\s\S]*?\]),/);
-  const stepsMatch = block.match(/steps:\s*(\[[\s\S]*?\]),/);
+  const ingMatch   = block.match(/ingredients:\s*(\[[\s\S]*?\]),\s*\n\s*steps:/);
+  const stepsMatch = block.match(/steps:\s*(\[[\s\S]*?\]),\s*\n\s*\}/);
   return {
-    ingredients: ingMatch   ? ingMatch[1] : "[]",
+    ingredients: ingMatch   ? ingMatch[1]   : "[]",
     steps:       stepsMatch ? stepsMatch[1] : "[]",
   };
 }
 
+// ── Build one recipe entry ────────────────────────────────────────────────────
 function buildEntry(r, existingBlock) {
-  const { ingredients, steps } = existingBlock
-    ? extractIngredientsAndSteps(existingBlock)
-    : { ingredients: "[]", steps: "[]" };
   const tagsStr = Array.isArray(r.tags)
     ? r.tags.map(t => `"${t}"`).join(", ")
     : (r.tags ? `"${r.tags}"` : "");
+
+  // Use Notion ingredients/steps if provided, otherwise fall back to existing code
+  let ingredients, steps;
+
+  if (r.ingredients && r.ingredients.trim()) {
+    ingredients = parseIngredients(r.ingredients);
+  } else if (existingBlock) {
+    ingredients = extractIngredientsAndSteps(existingBlock).ingredients;
+  } else {
+    ingredients = "[]";
+  }
+
+  if (r.steps && r.steps.trim()) {
+    steps = parseSteps(r.steps);
+  } else if (existingBlock) {
+    steps = extractIngredientsAndSteps(existingBlock).steps;
+  } else {
+    steps = "[]";
+  }
+
   return `  {
     id: "${r.id}",
     type: "${r.type}" as const,
@@ -197,11 +263,11 @@ function replaceBlock(source, startMarker, endMarker, newBlock, fallbackPattern)
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 (async () => {
-  console.log("\n🔄  Fetching from Notion API...");
+  console.log("🔄  Fetching from Notion...");
   const pages     = await fetchAllPages();
   const notionMap = parsePages(pages);
   const notionIds = Object.keys(notionMap);
-  console.log(`    Got ${notionIds.length} active recipes`);
+  console.log(`    ${notionIds.length} active recipes found`);
 
   if (!notionIds.length) {
     console.warn("⚠️   No active recipes — check Status = 'Active' in Notion."); return;
@@ -212,8 +278,12 @@ function replaceBlock(source, startMarker, endMarker, newBlock, fallbackPattern)
   const existingIds    = Object.keys(existingBlocks);
   const added          = notionIds.filter(id => !existingIds.includes(id));
   const removed        = existingIds.filter(id => !notionMap[id]);
+  const withIngredients = notionIds.filter(id => notionMap[id].ingredients?.trim());
+  const withSteps       = notionIds.filter(id => notionMap[id].steps?.trim());
 
   console.log(`    Kept: ${notionIds.length - added.length}  |  ✅ Added: ${added.length} (${added.join(", ")||"none"})  |  🗑  Removed: ${removed.length} (${removed.join(", ")||"none"})`);
+  console.log(`    📋  Recipes with Notion ingredients: ${withIngredients.length}/${notionIds.length}`);
+  console.log(`    📋  Recipes with Notion steps: ${withSteps.length}/${notionIds.length}`);
 
   let updated = replaceBlock(
     source,
@@ -234,8 +304,12 @@ function replaceBlock(source, startMarker, endMarker, newBlock, fallbackPattern)
   console.log("✅  App.tsx updated — " + new Date().toLocaleTimeString());
 
   if (added.length) {
-    console.log("\n  📝  New recipes added (empty ingredients/steps — fill in App.tsx):");
-    added.forEach(id => console.log(`      → ${id}: ${notionMap[id].name}`));
+    console.log("\n  📝  New recipes added:");
+    added.forEach(id => {
+      const r = notionMap[id];
+      const hasData = r.ingredients?.trim() && r.steps?.trim();
+      console.log(`      → ${id}: ${r.name} ${hasData ? "✅ (has ingredients & steps)" : "⚠️  (fill in Ingredients & Steps in Notion)"}`);
+    });
   }
 })().catch(e => {
   console.error("❌  Error:", e.message);
